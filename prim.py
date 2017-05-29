@@ -4,11 +4,16 @@ import collections
 import pdb
 
 def condition_chainer(conditions):
-    return
+    
+    query_string="(" + string_condition(conditions[0]) + ")"
+    for cond in conditions[1:]:
+        query_string+=" & (" + string_condition(cond) + ")"
+    
+    return query_string
 def string_condition(condition_):
     '''Build query string'''
     if isinstance(condition_[1],list):
-        return condition_[2]+">="+str(condition_[0])+"&"+condition_[2]+"<"+str(condition_[1])
+        return condition_[2]+">="+str(condition_[1][0])+" & "+condition_[2]+"<"+str(condition_[1][1])
     else:
         return condition_[2]+"=="+condition_[1]
 def split_score(x,y,alpha,beta,i,classes=None):
@@ -65,7 +70,6 @@ class PRIM:
         while support>self.beta:
             support=x_view.shape[0]
             candidates=Parallel(n_jobs=-1)(delayed(split_score)(x_view[i],y_view,self.alpha,self.beta,i,self.classes_[i]) for i in x_view.keys())
-            pdb.set_trace()
             winning_filter=winning_condition(candidates)
             conditions.append(winning_filter)
             x_view=x_view.query(string_condition(winning_filter))
@@ -85,11 +89,12 @@ class PRIM:
         support=x_view.shape[0]
         while support>self.beta:
             support=x_view.shape[0]
+            self.fit_box(x_view, y_view)
             self.box_conditions.append(self.fit_box(x_view, y_view))
-            x_view=x_view.query(string_condition(self.box_conditions[-1]))
+            pdb.set_trace()
+            x_view=x_view.query(condition_chainer(self.box_conditions[-1]))
             y_view=y_view[x_view.index]
             
-        self.fit_box(X,y,classes)
         return
     def predict(X,y):
         return
