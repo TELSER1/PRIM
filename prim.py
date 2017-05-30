@@ -13,15 +13,18 @@ def condense_condition(conditions):
     overall_bounds={}
     for i in conditions:
         if isinstance(i[1],list):
-            try:
-                if overall_bounds[i[2]]['min']>=i[1][0]:
+            if i[2] not in overall_bounds.keys():
+                overall_bounds[i[2]]={"min":-np.inf,"max":np.inf}
+            if i[1][1] == 'max':
+                try:
+                    overall_bounds[i[2]]['min']=np.max(i[1][0],overall_bounds[i[2]]['min'])
+                except:
                     overall_bounds[i[2]]['min']=i[1][0]
-                if overall_bounds[i[2]]['max']>i[1][1]:
-                    overall_bounds[i[2]]['max']=i[1][1]
-            except:
-                overall_bounds[i[2]]={}
-                overall_bounds[i[2]]['min']=i[1][0]
-                overall_bounds[i[2]]['max']=i[1][1]
+            else:
+                try:
+                    overall_bounds[i[2]]['max']=np.min(i[1][0],overall_bounds[i[2]]['max'])
+                except:
+                    overall_bounds[i[2]]['max']=i[1][0]
         else:
             try:
                 if i[1] not in overall_bounds[i[2]]:
@@ -29,7 +32,6 @@ def condense_condition(conditions):
             except:
                 overall_bounds[i[2]]=[]
                 overall_bounds[i[2]].append(i[1])
-    
     return(overall_bounds)
 
 def string_condition(condition_):
@@ -98,12 +100,9 @@ class PRIM:
         while support>self.beta:
             support=x_view.shape[0]
             candidates=[]
-            for i in x_view.keys():
-                candidates.append(split_score(x_view[i],y_view,self.alpha,self.beta,i,self.classes_[i]))
-#            candidates=Parallel(n_jobs=-1)(delayed(split_score)(x_view[i],y_view,self.alpha,self.beta,i,self.classes_[i]) for i in x_view.keys())
+            candidates=Parallel(n_jobs=-1)(delayed(split_score)(x_view[i],y_view,self.alpha,self.beta,i,self.classes_[i]) for i in x_view.keys())
             winning_filter=winning_condition(candidates)
             conditions.append(winning_filter)
-            print(string_condition(winning_filter))
             x_view=x_view.query(string_condition(winning_filter))
             y_view=y_view[x_view.index]
         return(conditions)
@@ -122,13 +121,14 @@ class PRIM:
         while support>self.beta:
             support=x_view.shape[0]
             box_=self.fit_box(x_view, y_view)
-            pdb.set_trace()
             print(condense_condition(box_))
             if len(box_)==0:
                 break
             self.box_conditions.append(box_)
+            pdb.set_trace()
             x_view=x_view.query(condition_chainer(self.box_conditions[-1]))
             y_view=y_view[x_view.index]
+            
         return
     def predict(X,y):
         return
