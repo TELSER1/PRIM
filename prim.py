@@ -54,8 +54,9 @@ def split_score(x,y,alpha,beta,i,classes=None):
         max_val=-np.inf
         max_cat=None
         for category in classes:
-            score_=y[x==category].mean()
-            if score_>max_val:
+            cat_score=y[x==category]
+            score_=cat_score.mean()
+            if score_>max_val and cat_score.shape[0]>beta:
                 max_val=score_
                 max_cat=category
         return [max_val,max_cat,i]
@@ -64,10 +65,12 @@ def split_score(x,y,alpha,beta,i,classes=None):
         max_split=x.quantile(1-alpha)
         min_split_score = y[(x<min_split)].mean()
         max_split_score = y[(x >= max_split)].mean()
-        if min_split_score>=max_split_score:
+        if min_split_score>=max_split_score and y[(x<min_split)].shape[0]>beta:
             return [min_split_score,[min_split,"min"],i]
-        else:
+        elif min_split_score<max_split_score and y[(x>=max_split)].shape[0]>beta:
             return [max_split_score,[max_split,'max'],i]
+        else:
+            return [-np.inf,[min_split,"min"],i]
 def winning_condition(cand):
     '''Return best conditional split for list cand'''
     max_val=-np.inf
@@ -75,8 +78,8 @@ def winning_condition(cand):
     for candidate in cand:
         if candidate[0]>max_val:
             max_val=candidate[0]
-            max_features=candidate
-    return(max_features)
+            max_feature=candidate
+    return(max_feature)
 class Box:
     def __init__(self,conditions,mean):
         self.conditions=conditions
@@ -102,6 +105,8 @@ class PRIM:
             candidates=[]
             candidates=Parallel(n_jobs=-1)(delayed(split_score)(x_view[i],y_view,self.alpha,self.beta,i,self.classes_[i]) for i in x_view.keys())
             winning_filter=winning_condition(candidates)
+            if len(conditions)>=1 and winning_filter==conditions[-1]:
+                break
             conditions.append(winning_filter)
             x_view=x_view.query(string_condition(winning_filter))
             y_view=y_view[x_view.index]
@@ -121,14 +126,13 @@ class PRIM:
         while support>self.beta:
             support=x_view.shape[0]
             box_=self.fit_box(x_view, y_view)
+            pdb.set_trace()
             print(condense_condition(box_))
             if len(box_)==0:
                 break
             self.box_conditions.append(box_)
-            pdb.set_trace()
             x_view=x_view.query(condition_chainer(self.box_conditions[-1]))
             y_view=y_view[x_view.index]
-            
         return
     def predict(X,y):
         return
