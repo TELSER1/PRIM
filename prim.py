@@ -3,14 +3,14 @@ from joblib import Parallel, delayed
 import collections
 import pdb
 
-def condition_chainer(conditions):
-    query_string="not ((" + string_condition(conditions[0]) + ")"
+def condition_chainer(conditions,action='not'):
+    query_string=action+" ((" + string_condition(conditions[0]) + ")"
     for cond in conditions[1:]:
         query_string+=" and (" + string_condition(cond) + ")"
     query_string+=")"
     return query_string
-def condense_condition(conditions):
-    overall_bounds={}
+def condense_condition(conditions,existing_reqs):
+    overall_bounds={}    
     for i in conditions:
         if isinstance(i[1],list):
             if i[2] not in overall_bounds.keys():
@@ -33,6 +33,7 @@ def condense_condition(conditions):
                 overall_bounds[i[2]]=[]
                 overall_bounds[i[2]].append(i[1])
     return(overall_bounds)
+    
 
 def string_condition(condition_):
     '''Build query string'''
@@ -41,6 +42,7 @@ def string_condition(condition_):
         return condition_[2]+quantile_dict[condition_[1][1]]+np.str(condition_[1][0])
     else:
         return condition_[2]+"=="+"'"+condition_[1]+"'"
+    
 def split_score(x,y,alpha,beta,i,classes=None):
     '''
     x: Feature vector
@@ -80,12 +82,31 @@ def winning_condition(cand):
             max_val=candidate[0]
             max_feature=candidate
     return(max_feature)
+def generate_boxes(conditions):
+    boxes_=[]
+    for cond in conditions:
+        boxes_.append(Box(cond,cond[-1][0]))
+    return(boxes_)
 class Box:
-    def __init__(self,conditions,mean):
+    def __init__(self,conditionsmean):
+        '''For each box, need to build concatenation function to form big not statement'''
         self.conditions=conditions
         self.mean=mean
+
+def update_constraints(new_cond,existing_constraints):
+    for i in new_cond:
+        if isinstance(i[1],list):
+            if i[1][1] == 'max' and existing_constraints[i[2]]['max'] and existing_constraints[i[2]]['max'] >  i[1][0]:
+                existing_constraints[i[2]]['max'] = i[1][0]
+            if i[1][1] == 'min' and existing_constraints[i[2]]['min'] and existing_constraints[i[2]]['min'] <  i[1][0]:
+                pdb.set_trace()
+                existing_constraints[[i[2]]]['min'] = i[1][0] 
+    return(existing_constraints)
+#                existing_constraints[[i[2]]['min'] = i[1][0]
+#    return(existing_constraints)
+            
 class PRIM:
-    def __init__(self,beta=25,alpha=.05,bottom_up=True):
+    def __init__(self,beta=5,alpha=.05,bottom_up=True):
         '''
         beta: Minimum number of samples required to partition to a smaller box.
         alpha: Threshold for candidate partitions
@@ -105,16 +126,20 @@ class PRIM:
             candidates=[]
             candidates=Parallel(n_jobs=-1)(delayed(split_score)(x_view[i],y_view,self.alpha,self.beta,i,self.classes_[i]) for i in x_view.keys())
             winning_filter=winning_condition(candidates)
-            if len(conditions)>=1 and winning_filter==conditions[-1]:
-                break
+            if winning_filter in conditions:
+                return(conditions)
             conditions.append(winning_filter)
-            x_view=x_view.query(string_condition(winning_filter))
+            try:
+                x_view=x_view.query(string_condition(winning_filter))
+            except:
+                x_view=x_view.query(string_condition(winning_filter))
             y_view=y_view[x_view.index]
         return(conditions)
     def fit(self,X,y,n_jobs=-1):
         self.n_jobs=n_jobs
         self.classes_=collections.OrderedDict()
         self.box_conditions=[]
+        existing_constraints={}
         x_view=X
         y_view=y
         for i in X.keys():
@@ -122,26 +147,45 @@ class PRIM:
                 self.classes_[i]=list(set(X[i]))
             else:
                 self.classes_[i]=None
+                existing_constraints[i]={}
+                existing_constraints[i]['min']=None
+                existing_constraints[i]['max']=None
         support=x_view.shape[0]
         while support>self.beta:
             support=x_view.shape[0]
             box_=self.fit_box(x_view, y_view)
-            pdb.set_trace()
-            print(condense_condition(box_))
             if len(box_)==0:
                 break
             self.box_conditions.append(box_)
+                                    
+            existing_constraints = update_constraints(box_,existing_constraints)
+                                     
             x_view=x_view.query(condition_chainer(self.box_conditions[-1]))
+            
             y_view=y_view[x_view.index]
+            print(x_view.shape[0])
+        self.boxes=generate_boxes(self.box_conditions)
+        pdb.set_trace()
+        self.baseline= y.mean()
         return
-    def predict(X,y):
-        return
+    def predict(self,X):
+        predictions=np.full(X.shape[0],self.baseline)
+        indices=[]
+        for box_ in self.boxes:
+            indices.append(X.query(condition_chainer(box_.conditions,"")).index)
+            predictions[X.query(condition_chainer(box_.conditions,"")).index]=box_.mean
+        return(predictions)
 
 if __name__ == "__main__":
     import pandas as pd
     import numpy as np
     data=pd.DataFrame({"A":np.random.randint(0,100,1000),"B":np.random.randint(0,100,1000),"C":[np.random.choice(["apples","bananas","oranges"]) for i in range(0,1000)],"D":np.random.normal(size=1000)})
     data['D'][data['C']=='apples']=200
-    print(data['D'].max())
-    RGR = PRIM()
+    RGR = PRIM(beta=5) 
     RGR.fit(data[['A','B','C']],data['D'])
+    zed=RGR.predict(data)
+    for box_ in RGR.boxes:
+        print box_.conditions
+        print box_.mean
+    pdb.set_trace()
+    print(RGR.predict(data))
