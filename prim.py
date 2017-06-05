@@ -2,7 +2,7 @@ import numpy as np
 from joblib import Parallel, delayed
 import collections
 import pdb
-
+import copy 
 def condition_chainer(conditions,action='not'):
     query_string=action+" ((" + string_condition(conditions[0]) + ")"
     for cond in conditions[1:]:
@@ -88,20 +88,29 @@ def generate_boxes(conditions):
         boxes_.append(Box(cond,cond[-1][0]))
     return(boxes_)
 class Box:
-    def __init__(self,conditionsmean):
+    def __init__(self,conditions,mean):
         '''For each box, need to build concatenation function to form big not statement'''
         self.conditions=conditions
         self.mean=mean
 
 def update_constraints(new_cond,existing_constraints):
+    existing_constraints_ = copy.deepcopy(existing_constraints)
     for i in new_cond:
         if isinstance(i[1],list):
-            if i[1][1] == 'max' and existing_constraints[i[2]]['max'] and existing_constraints[i[2]]['max'] >  i[1][0]:
-                existing_constraints[i[2]]['max'] = i[1][0]
-            if i[1][1] == 'min' and existing_constraints[i[2]]['min'] and existing_constraints[i[2]]['min'] <  i[1][0]:
-                pdb.set_trace()
-                existing_constraints[[i[2]]]['min'] = i[1][0] 
-    return(existing_constraints)
+            if i[1][1] == 'max' and (not existing_constraints_[i[2]]['max'] or existing_constraints_[i[2]]['max'] >  i[1][0]):
+                existing_constraints_[i[2]]['max'] = i[1][0]
+            if i[1][1] == 'min' and (not existing_constraints_[i[2]]['min'] or existing_constraints_[i[2]]['min'] <  i[1][0]):
+                existing_constraints_[i[2]]['min'] = i[1][0] 
+    return(existing_constraints_)
+def box_bounds(conditions_,existing_constraints_):
+    supplemental_conditions = []
+    for i in conditions_:
+        if isinstance(i[1],list):
+            if i[1][1] == 'max' and (existing_constraints_[i[2]]['max'] and existing_constraints_[i[2]]['max'] >  i[1][0]):
+                supplemental_conditions.append([[0],[existing_constraints_[i[2]]['max'],'min'],i[2]])
+            if i[1][1] == 'min' and (existing_constraints_[i[2]]['min'] and existing_constraints_[i[2]]['min'] <  i[1][0]):
+                supplemental_conditions.append([i[0],[existing_constraints_[i[2]]['min'],'max'],i[2]])
+    return(supplemental_conditions+conditions_)
 #                existing_constraints[[i[2]]['min'] = i[1][0]
 #    return(existing_constraints)
             
@@ -156,23 +165,27 @@ class PRIM:
             box_=self.fit_box(x_view, y_view)
             if len(box_)==0:
                 break
-            self.box_conditions.append(box_)
-                                    
-            existing_constraints = update_constraints(box_,existing_constraints)
-                                     
+            intermediate_constraints = update_constraints(box_,existing_constraints)
+            self.box_conditions.append(box_bounds(box_,existing_constraints))
+            existing_constraints = intermediate_constraints
             x_view=x_view.query(condition_chainer(self.box_conditions[-1]))
             
             y_view=y_view[x_view.index]
-            print(x_view.shape[0])
         self.boxes=generate_boxes(self.box_conditions)
-        pdb.set_trace()
         self.baseline= y.mean()
         return
     def predict(self,X):
         predictions=np.full(X.shape[0],self.baseline)
         indices=[]
+        counter=0
         for box_ in self.boxes:
-            indices.append(X.query(condition_chainer(box_.conditions,"")).index)
+            if box_.mean!=200:
+                print(counter)
+                print(set(X.query(condition_chainer(box_.conditions,"")).index).intersection(set(indices)))
+                pdb.set_trace()
+                indices+=list(X.query(condition_chainer(box_.conditions,"")).index)
+#            indices.append(X.query(condition_chainer(box_.conditions,"")).index)
+            counter+=1
             predictions[X.query(condition_chainer(box_.conditions,"")).index]=box_.mean
         return(predictions)
 
@@ -184,8 +197,3 @@ if __name__ == "__main__":
     RGR = PRIM(beta=5) 
     RGR.fit(data[['A','B','C']],data['D'])
     zed=RGR.predict(data)
-    for box_ in RGR.boxes:
-        print box_.conditions
-        print box_.mean
-    pdb.set_trace()
-    print(RGR.predict(data))
