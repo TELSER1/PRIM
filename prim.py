@@ -93,15 +93,6 @@ class Box:
         self.conditions=conditions
         self.mean=mean
 
-def update_constraints(new_cond,existing_constraints):
-    existing_constraints_ = copy.deepcopy(existing_constraints)
-    for i in new_cond:
-        if isinstance(i[1],list):
-            if i[1][1] == 'max' and (not existing_constraints_[i[2]]['max'] or existing_constraints_[i[2]]['max'] >  i[1][0]):
-                existing_constraints_[i[2]]['max'] = i[1][0]
-            if i[1][1] == 'min' and (not existing_constraints_[i[2]]['min'] or existing_constraints_[i[2]]['min'] <  i[1][0]):
-                existing_constraints_[i[2]]['min'] = i[1][0] 
-    return(existing_constraints_)
 def box_bounds(conditions_,existing_constraints_):
     supplemental_conditions = []
     for i in conditions_:
@@ -148,7 +139,7 @@ class PRIM:
         self.n_jobs=n_jobs
         self.classes_=collections.OrderedDict()
         self.box_conditions=[]
-        existing_constraints={}
+        self.boxes=[]
         x_view=X
         y_view=y
         for i in X.keys():
@@ -156,37 +147,24 @@ class PRIM:
                 self.classes_[i]=list(set(X[i]))
             else:
                 self.classes_[i]=None
-                existing_constraints[i]={}
-                existing_constraints[i]['min']=None
-                existing_constraints[i]['max']=None
         support=x_view.shape[0]
         while support>self.beta:
             support=x_view.shape[0]
             box_=self.fit_box(x_view, y_view)
             if len(box_)==0:
                 break
-            intermediate_constraints = update_constraints(box_,existing_constraints)
-            self.box_conditions.append(box_bounds(box_,existing_constraints))
-            existing_constraints = intermediate_constraints
+            self.box_conditions.append(box_)
+            self.boxes.append(Box(self.box_conditions[-1],self.box_conditions[-1][-1][0]))
             x_view=x_view.query(condition_chainer(self.box_conditions[-1]))
-            
             y_view=y_view[x_view.index]
-        self.boxes=generate_boxes(self.box_conditions)
         self.baseline= y.mean()
         return
     def predict(self,X):
         predictions=np.full(X.shape[0],self.baseline)
         indices=[]
-        counter=0
         for box_ in self.boxes:
-            if box_.mean!=200:
-                print(counter)
-                print(set(X.query(condition_chainer(box_.conditions,"")).index).intersection(set(indices)))
-                pdb.set_trace()
-                indices+=list(X.query(condition_chainer(box_.conditions,"")).index)
-#            indices.append(X.query(condition_chainer(box_.conditions,"")).index)
-            counter+=1
             predictions[X.query(condition_chainer(box_.conditions,"")).index]=box_.mean
+            X = X.query(condition_chainer(box_.conditions))
         return(predictions)
 
 if __name__ == "__main__":
@@ -196,4 +174,4 @@ if __name__ == "__main__":
     data['D'][data['C']=='apples']=200
     RGR = PRIM(beta=5) 
     RGR.fit(data[['A','B','C']],data['D'])
-    zed=RGR.predict(data)
+    print(set(RGR.predict(data)))
