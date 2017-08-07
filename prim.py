@@ -3,12 +3,16 @@ from joblib import Parallel, delayed
 import collections
 import pdb
 import copy 
+
+
 def condition_chainer(conditions,action='not'):
     query_string=action+" ((" + string_condition(conditions[0]) + ")"
     for cond in conditions[1:]:
         query_string+=" and (" + string_condition(cond) + ")"
     query_string+=")"
     return query_string
+
+
 def condense_condition(conditions,existing_reqs):
     overall_bounds={}    
     for i in conditions:
@@ -43,6 +47,7 @@ def string_condition(condition_):
     else:
         return condition_[2]+"=="+"'"+condition_[1]+"'"
     
+
 def split_score(x,y,alpha,beta,i,classes=None):
     '''
     x: Feature vector
@@ -73,6 +78,8 @@ def split_score(x,y,alpha,beta,i,classes=None):
             return [max_split_score,[max_split,'max'],i]
         else:
             return [-np.inf,[min_split,"min"],i]
+
+
 def winning_condition(cand):
     '''Return best conditional split for list cand'''
     max_val=-np.inf
@@ -170,7 +177,8 @@ class PRIM:
 if __name__ == "__main__":
     import pandas as pd
     import numpy as np
-    data=pd.DataFrame({"A":np.random.randint(0,100,1000),"B":np.random.randint(0,100,1000),"C":[np.random.choice(["apples","bananas","oranges"]) for i in range(0,1000)],"D":np.random.normal(size=1000)})
+    import pdb
+    data=pd.DataFrame({"A":np.random.randint(0,100,100),"B":np.random.randint(0,100,100),"C":[np.random.choice(["apples","bananas","oranges"]) for i in range(0,100)],"D":np.random.normal(size=100)})
     data['D'][data['C']=='apples']=200
     RGR = PRIM(beta=5) 
     RGR.fit(data[['A','B','C']],data['D'])
